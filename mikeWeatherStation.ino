@@ -11,7 +11,7 @@
 #define USERNAME "wxd4t4"
 #define PASSWORD "w34th3r"
 #define FTPPATH  "/"
-#define WX_ID    "Holmbeck"
+#define WXID    "Holmbeck"
 
 //=================================
 // barometer
@@ -125,10 +125,13 @@ SoftwareSerial diagport(DIAGPORT_RX, DIAGPORT_TX);
 // data record for writing results to flash
 // and uploading to server
 //=================================
-#include <Sodaq_dataflash.h>
-#include "Diag.h"
 #include "DataRecord.h"
-myRecord dataRecord;
+#include <Sodaq_dataflash.h>
+#define DF_SELECT   10
+#define DF_MOSI     11
+#define DF_MISO     12
+#define DF_SPICLOCK 13
+wxDataRecord dataRecord;
 
 //=====================================================================================
 // Arduino setup
@@ -170,6 +173,10 @@ void setup()
   //================
   initWind();
 
+  // initialise data flash
+  //======================
+  dataFlashInit();
+  
   // initialise timers
   //==================
   initTimers();
@@ -319,13 +326,13 @@ void barometerInit(void)
 //=====================================================================================
 void barometerGetPressure(void)
 {
-  // get the pressure
-  //=================
-  dataRecord.pressure = barometer.bmp085GetPressure(barometer.bmp085ReadUP());
-  
   // get the temperature
   //====================
   dataRecord.temperature = barometer.bmp085GetTemperature(barometer.bmp085ReadUT()); 
+
+  // get the pressure
+  //=================
+  dataRecord.pressure = barometer.bmp085GetPressure(barometer.bmp085ReadUP());
 }
 
 //=====================================================================================
@@ -373,6 +380,14 @@ void batteryShowVoltage(void)
   DIAGPRINT(F("    Battery: "));
   DIAGPRINT(batteryVoltage);
   DIAGPRINTLN(F(" V"));
+}
+
+//=====================================================================================
+// inialise data flash
+//=====================================================================================
+void dataFlashInit(void)
+{
+  dflash.init(DF_MISO, DF_MOSI, DF_SPICLOCK, DF_SELECT);
 }
 
 //=====================================================================================
@@ -555,6 +570,9 @@ void initSerial(void)
 #endif
 }
 
+//=====================================================================================
+// initialise internal timers
+//=====================================================================================
 void initTimers(void)
 {
   uint32_t epoch;
@@ -586,6 +604,9 @@ void initWind(void)
   DIAGPRINT("w");
 }
 
+//=====================================================================================
+// print separator
+//=====================================================================================
 void separator(int count)
 {
   // print a separator
@@ -598,7 +619,7 @@ void separator(int count)
 void showEpoch(uint32_t epoch)
 {
 //=====================================================================================
-// routine to show time
+// routine to show epoch
 //=====================================================================================
   DIAGPRINT(epoch);
   DIAGPRINT(" ");
@@ -650,8 +671,8 @@ void showTime(void)
 //=====================================================================================
 void showTimestamp(void)
 {
-  char months[][4] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-  char wkdays[][4] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+  static char months[][4] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+  static char wkdays[][4] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
 
   float temp;
   int day;
@@ -694,17 +715,16 @@ void showTimestamp(void)
 //=====================================================================================
 void showWind(void)
 {
-  int windRaw;
   float windSpeed;
   int myTicks;
   
-  int  direction[] = {    0,    74,    88,   110,   156,   215,  267,   349,   436,   533,   617,   669,   747,   809,   859,   918, 1024};
-  char points[][4] = {"ESE", "ENE", "E  ", "SSE", "SE ", "SSW", "S  ", "NNE", "NE ", "WSW", "SW ", "NNW", "N  ", "WNW", "NW ", "W  "};
+  static int  direction[] = {    0,    74,    88,   110,   156,   215,  267,   349,   436,   533,   617,   669,   747,   809,   859,   918, 1024};
+  static char points[][4] = {"ESE", "ENE", "E  ", "SSE", "SE ", "SSW", "S  ", "NNE", "NE ", "WSW", "SW ", "NNW", "N  ", "WNW", "NW ", "W  "};
   int i;
   
   // read raw data
   //==============
-  windRaw = analogRead(WINDDIRPIN);
+  dataRecord.wind_dir = analogRead(WINDDIRPIN);
   
   DIAGPRINT(F("   Wind dir: "));
 
@@ -712,14 +732,14 @@ void showWind(void)
   //=====================
   for (i=0; i<sizeof(direction); i++)
   {
-    if (windRaw > direction[i] && windRaw < direction[i+1])
+    if (dataRecord.wind_dir > direction[i] && dataRecord.wind_dir < direction[i+1])
     {
         DIAGPRINT(points[i]);
         break;
     }
   }
   DIAGPRINT(F(" ("));
-  DIAGPRINT(windRaw);
+  DIAGPRINT(dataRecord.wind_dir);
   DIAGPRINTLN(F(")"));
   
   // convert windTicks to wind speed
@@ -789,7 +809,7 @@ void systemSleep()
   //======================================
   MCUCR = bit (BODS) | bit (BODSE);
   MCUCR = bit (BODS); 
-  sleep_cpu();
+  // DIAGPRINT("sleep... ");
 
   // sleep...
   //=========
@@ -797,6 +817,7 @@ void systemSleep()
 
   // ... and wake-up
   //================
+  // DIAGPRINTLN(" ...waken");
 
   // enable ADC
   //===========
